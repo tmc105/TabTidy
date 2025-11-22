@@ -1,8 +1,0 @@
-.dccache
-.DS_Store
-*.pem
-*.zip
-build
-node_modules
-Thumbs.db
-tmp
