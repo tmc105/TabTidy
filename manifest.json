@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "TabTidy - One-Click Janitor",
+  "version": "1.0",
+  "description": "Organize tabs into groups and suspend them to save memory.",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "Tidy & Suspend"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Tidy Tabs"
+    }
+  }
+}
