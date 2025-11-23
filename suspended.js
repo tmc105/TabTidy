@@ -19,35 +19,69 @@ function updateUI() {
 
     // Set Favicon (Faded to 50% opacity)
     if (favicon && favicon !== '' && favicon !== 'null') {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.src = favicon;
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 32;
-            canvas.height = 32;
-            const ctx = canvas.getContext('2d');
-
-            // Draw with 50% opacity
-            ctx.globalAlpha = 0.5;
-            ctx.drawImage(img, 0, 0, 32, 32);
-
-            let link = document.querySelector("link[rel~='icon']");
-            if (!link) {
-                link = document.createElement('link');
-                link.rel = 'icon';
-                document.head.appendChild(link);
-            }
-            link.href = canvas.toDataURL();
-        };
-        img.onerror = () => {
-            // Fallback to sweeping brush emoji if favicon fails to load
-            setEmojiFavicon();
-        };
+        tryFadeFavicon(favicon);
     } else {
-        // No favicon provided, use sweeping brush emoji
+        // No favicon provided, use zzz emoji
         setEmojiFavicon();
     }
+}
+
+function tryFadeFavicon(faviconUrl) {
+    const img = new Image();
+
+    // First attempt: without crossOrigin (works for same-origin and permissive CORS)
+    img.src = faviconUrl;
+    img.onload = () => {
+        try {
+            applyFadedFavicon(img);
+        } catch (e) {
+            // CORS error - try loading with crossOrigin
+            tryWithCrossOrigin(faviconUrl);
+        }
+    };
+    img.onerror = () => {
+        // Favicon failed to load, use zzz
+        setEmojiFavicon();
+    };
+}
+
+function tryWithCrossOrigin(faviconUrl) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = faviconUrl + '?t=' + Date.now(); // Cache bust to retry
+    img.onload = () => {
+        try {
+            applyFadedFavicon(img);
+        } catch (e) {
+            // Still failed, use zzz
+            setEmojiFavicon();
+        }
+    };
+    img.onerror = () => {
+        setEmojiFavicon();
+    };
+}
+
+function applyFadedFavicon(img) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+
+    // Draw with 50% opacity
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(img, 0, 0, 32, 32);
+
+    // This will throw if CORS doesn't allow canvas access
+    const dataUrl = canvas.toDataURL();
+
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+    }
+    link.href = dataUrl;
 }
 
 function setEmojiFavicon() {
@@ -57,7 +91,7 @@ function setEmojiFavicon() {
         link.rel = 'icon';
         document.head.appendChild(link);
     }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧹</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💤</text></svg>`;
     link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 
