@@ -1,10 +1,30 @@
 // background.js
 
+// Shared function to create menus
+function createMenus() {
+    chrome.contextMenus.removeAll(() => {
+        chrome.contextMenus.create({
+            id: "whitelist-domain",
+            title: "TabTidy: Whitelist this Domain",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "whitelist-url",
+            title: "TabTidy: Whitelist this URL",
+            contexts: ["all"]
+        });
+    });
+}
+
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(async () => {
     // Create the auto-suspend alarm (starts with 15 second checks)
     chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 0.25 });
-    console.log('TabTidy: Extension installed, alarm created');
+
+    // Create Context Menu Items
+    createMenus();
+
+    console.log('TabTidy: Extension installed, alarm created, context menus added');
 
     // Initialize activity for all existing tabs
     await initializeExistingTabs();
@@ -14,6 +34,10 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
     // Create the auto-suspend alarm (starts with 15 second checks)
     chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 0.25 });
+
+    // Re-create Context Menu Items
+    createMenus();
+
     console.log('TabTidy: Service worker started, alarm created');
 
     // Initialize activity for all existing tabs
@@ -29,6 +53,29 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
     if (command === '_execute_action') {
         await performTidy();
+    }
+});
+
+// Handle Context Menu Clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "whitelist-domain" || info.menuItemId === "whitelist-url") {
+        const url = new URL(tab.url);
+        let itemToAdd = "";
+
+        if (info.menuItemId === "whitelist-domain") {
+            itemToAdd = url.hostname;
+        } else {
+            itemToAdd = tab.url;
+        }
+
+        const data = await chrome.storage.local.get('whitelist');
+        const whitelist = data.whitelist || [];
+
+        if (!whitelist.includes(itemToAdd)) {
+            whitelist.push(itemToAdd);
+            await chrome.storage.local.set({ whitelist });
+            console.log(`TabTidy: Added '${itemToAdd}' to whitelist`);
+        }
     }
 });
 
@@ -93,9 +140,24 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         const delayMs = delayMinutes * 60 * 1000;
         const now = Date.now();
         const tabs = await chrome.tabs.query({ active: false, audible: false, status: 'complete' });
+
+        // Get whitelist
+        const whitelistData = await chrome.storage.local.get('whitelist');
+        const whitelist = whitelistData.whitelist || [];
+
         console.log(`TabTidy: Checking ${tabs.length} inactive tabs`);
 
         for (const tab of tabs) {
+            // Check whitelist
+            const isWhitelisted = whitelist.some(item => {
+                return tab.url === item || new URL(tab.url).hostname === item || new URL(tab.url).hostname.endsWith(item);
+            });
+
+            if (isWhitelisted) {
+                console.log(`TabTidy: Skipping whitelisted tab ${tab.id} (${tab.url})`);
+                continue;
+            }
+
             // Skip if already suspended or pinned or system page
             if (tab.url.includes('suspended.html') || tab.pinned || isSystemPage(tab.url)) {
                 console.log(`TabTidy: Skipping tab ${tab.id} (${tab.url.substring(0, 50)}...)`);

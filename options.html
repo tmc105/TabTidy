@@ -54,6 +54,10 @@
             color: #495057;
         }
 
+        p {
+            color: #7a9ac7;
+        }
+
         .button {
             display: inline-block;
             padding: 8px 16px;
@@ -62,10 +66,59 @@
             text-decoration: none;
             border-radius: 4px;
             margin-top: 10px;
+            border: none;
+            cursor: pointer;
         }
 
         .button:hover {
             background: #1c7ed6;
+        }
+
+        .whitelist-container {
+            margin-top: 15px;
+        }
+
+        #whitelistItems {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 15px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+
+        #whitelistItems li {
+            padding: 8px 12px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            color: #6b8ec7;
+        }
+
+        #whitelistItems li:last-child {
+            border-bottom: none;
+        }
+
+        .remove-btn {
+            color: #fa5252;
+            cursor: pointer;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .add-whitelist {
+            display: flex;
+            gap: 10px;
+        }
+
+        #newWhitelistItem {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
         }
     </style>
 </head>
@@ -86,6 +139,18 @@
                     <option value="30">30 Minutes</option>
                     <option value="60">1 Hour</option>
                 </select>
+            </div>
+
+            <div class="setting-card">
+                <h3>Whitelist</h3>
+                <p>Prevent specific sites from being auto-suspended.</p>
+                <div class="whitelist-container">
+                    <ul id="whitelistItems"></ul>
+                    <div class="add-whitelist">
+                        <input type="text" id="newWhitelistItem" placeholder="example.com or full URL">
+                        <button id="addWhitelistBtn" class="button" style="margin-top: 0;">Add</button>
+                    </div>
+                </div>
             </div>
 
             <div class="setting-card">

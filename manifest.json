@@ -1,14 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "TabTidy - One-Click Janitor",
+  "name": "TabTidy",
   "version": "1.0",
-  "description": "Organize tabs into groups and suspend them to save memory.",
+  "description": "A lightweight, open source tab manager that organizes tabs into groups and suspends them to save memory.",
+  "icons": {
+    "32": "icons/icon32.png",
+    "64": "icons/icon64.png",
+    "128": "icons/icon128.png",
+    "256": "icons/icon256.png"
+  },
   "permissions": [
     "tabs",
     "tabGroups",
     "storage",
     "scripting",
-    "alarms"
+    "alarms",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
