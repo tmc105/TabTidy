@@ -17,8 +17,8 @@ function updateUI() {
         document.title = title;
     }
 
-    // Set Favicon (Faded & Grayscale)
-    if (favicon) {
+    // Set Favicon (Faded to 50% opacity)
+    if (favicon && favicon !== '' && favicon !== 'null') {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.src = favicon;
@@ -28,19 +28,8 @@ function updateUI() {
             canvas.height = 32;
             const ctx = canvas.getContext('2d');
 
-            // Draw original favicon
-            ctx.drawImage(img, 0, 0, 32, 32);
-
-            // Apply fading and grayscale
-            ctx.globalCompositeOperation = 'source-in';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; // 50% opacity mask
-            ctx.fillRect(0, 0, 32, 32);
-
-            // Alternative: Draw with opacity and filter
-            // This is better for preserving shape
-            canvas.width = 32; // Reset
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.filter = 'grayscale(100%) opacity(50%)';
+            // Draw with 50% opacity
+            ctx.globalAlpha = 0.5;
             ctx.drawImage(img, 0, 0, 32, 32);
 
             let link = document.querySelector("link[rel~='icon']");
@@ -52,10 +41,11 @@ function updateUI() {
             link.href = canvas.toDataURL();
         };
         img.onerror = () => {
-            // Fallback to Zzz if favicon fails to load
+            // Fallback to sweeping brush emoji if favicon fails to load
             setEmojiFavicon();
         };
     } else {
+        // No favicon provided, use sweeping brush emoji
         setEmojiFavicon();
     }
 }
@@ -67,7 +57,7 @@ function setEmojiFavicon() {
         link.rel = 'icon';
         document.head.appendChild(link);
     }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">💤</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧹</text></svg>`;
     link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
 

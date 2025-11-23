@@ -255,6 +255,8 @@ async function performTidy() {
 
         // Suspend inactive tabs in this group
         for (const tab of validTabs) {
+            // Skip if already suspended, active, or audible
+            if (tab.url.includes('suspended.html')) continue;
             if (!tab.active && !tab.audible) {
                 tabsToSuspend.push(tab.id);
             }
