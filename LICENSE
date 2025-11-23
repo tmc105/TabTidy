@@ -1,0 +1,84 @@
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+Copyright (C) 2025 TabTidy Contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Full license text: https://www.gnu.org/licenses/gpl-3.0.en.html
+
+---
+
+TERMS AND CONDITIONS
+
+0. Definitions.
+
+"This License" refers to version 3 of the GNU General Public License.
+
+"The Program" refers to any copyrightable work licensed under this License.
+
+"You" refers to the licensee, either an individual or an organization.
+
+"Modify" means to copy from or adapt all or part of the work in a fashion
+requiring copyright permission, other than the making of an exact copy.
+
+"Propagate" means doing anything with the Program that requires permission
+under applicable copyright law, except executing it on a computer or
+modifying a private copy.
+
+"Convey" means any kind of propagation that enables other parties to make
+or receive copies.
+
+1. Source Code.
+
+The "source code" for a work means the preferred form of the work for making
+modifications to it. The complete source code for this Program is available at:
+https://github.com/tmc105/TabTidy
+
+2. Basic Permissions.
+
+All rights granted under this License are granted for the term of copyright
+on the Program, and are irrevocable provided the stated conditions are met.
+
+You are free to:
+- Use the Program for any purpose
+- Study how the Program works and modify it
+- Distribute copies of the Program
+- Distribute modified versions of the Program
+
+3. Copyleft.
+
+You must license the entire work, as a whole, under this License to anyone
+who comes into possession of a copy. This License gives no permission to
+license the work in any other way.
+
+4. No Warranty.
+
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE
+LAW. THE PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
+EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+5. Limitation of Liability.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW WILL ANY COPYRIGHT HOLDER BE
+LIABLE TO YOU FOR DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE
+PROGRAM.
+
+---
+
+For the complete and official text of the GNU General Public License v3.0,
+please visit: https://www.gnu.org/licenses/gpl-3.0.en.html
