@@ -95,31 +95,39 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 });
 
 // Auto-Suspend Logic
-const tabActivity = new Map();
+const TAB_ACTIVITY_KEY = 'tabActivity';
 
-function updateTabActivity(tabId) {
-    tabActivity.set(tabId, Date.now());
+async function updateTabActivity(tabId) {
+    const data = await chrome.storage.local.get(TAB_ACTIVITY_KEY);
+    const activity = data[TAB_ACTIVITY_KEY] || {};
+    activity[tabId] = Date.now();
+    await chrome.storage.local.set({ [TAB_ACTIVITY_KEY]: activity });
 }
 
 // Track new tabs
-chrome.tabs.onCreated.addListener((tab) => {
-    updateTabActivity(tab.id);
+chrome.tabs.onCreated.addListener(async (tab) => {
+    await updateTabActivity(tab.id);
 });
 
 // Track removed tabs (cleanup)
-chrome.tabs.onRemoved.addListener((tabId) => {
-    tabActivity.delete(tabId);
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+    const data = await chrome.storage.local.get(TAB_ACTIVITY_KEY);
+    const activity = data[TAB_ACTIVITY_KEY] || {};
+    delete activity[tabId];
+    await chrome.storage.local.set({ [TAB_ACTIVITY_KEY]: activity });
 });
 
 // Initialize activity tracking for all existing tabs
 async function initializeExistingTabs() {
     const tabs = await chrome.tabs.query({});
     const now = Date.now();
+    const activity = {};
     for (const tab of tabs) {
         if (!isSystemPage(tab.url)) {
-            tabActivity.set(tab.id, now);
+            activity[tab.id] = now;
         }
     }
+    await chrome.storage.local.set({ [TAB_ACTIVITY_KEY]: activity });
     console.log(`TabTidy: Initialized activity for ${tabs.length} existing tabs`);
 }
 
@@ -127,7 +135,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     console.log('TabTidy: Alarm fired:', alarm.name);
     if (alarm.name === 'checkAutoSuspend') {
         const checkData = await chrome.storage.local.get('autoSuspendDelay');
-        const delayMinutes = checkData.autoSuspendDelay;
+        const delayMinutes = Number(checkData.autoSuspendDelay) || 0;
         console.log('TabTidy: Auto-suspend delay setting:', delayMinutes);
 
         if (!delayMinutes || delayMinutes <= 0) {
@@ -140,6 +148,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         const delayMs = delayMinutes * 60 * 1000;
         const now = Date.now();
         const tabs = await chrome.tabs.query({ active: false, audible: false, status: 'complete' });
+
+        const activityData = await chrome.storage.local.get(TAB_ACTIVITY_KEY);
+        const activity = activityData[TAB_ACTIVITY_KEY] || {};
 
         // Get whitelist
         const whitelistData = await chrome.storage.local.get('whitelist');
@@ -164,11 +175,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                 continue;
             }
 
-            const lastActive = tabActivity.get(tab.id);
+            const lastActive = activity[tab.id];
 
             // If we don't have activity data, initialize it to now (tab was created before extension loaded)
             if (!lastActive) {
-                updateTabActivity(tab.id);
+                await updateTabActivity(tab.id);
                 console.log(`TabTidy: Initialized activity for tab ${tab.id}`);
                 continue; // Skip this check, will catch it next time
             }
