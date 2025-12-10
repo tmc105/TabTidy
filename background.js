@@ -16,10 +16,19 @@ function createMenus() {
     });
 }
 
+async function ensureAutoSuspendAlarm() {
+    const alarm = await chrome.alarms.get('checkAutoSuspend');
+    if (!alarm) {
+        chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 0.25, periodInMinutes: 1 });
+    }
+}
+
+ensureAutoSuspendAlarm();
+
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(async () => {
     // Create the auto-suspend alarm (starts with 15 second checks)
-    chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 0.25 });
+    await ensureAutoSuspendAlarm();
 
     // Create Context Menu Items
     createMenus();
@@ -33,7 +42,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 // Ensure alarm exists on service worker startup
 chrome.runtime.onStartup.addListener(async () => {
     // Create the auto-suspend alarm (starts with 15 second checks)
-    chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 0.25 });
+    await ensureAutoSuspendAlarm();
 
     // Re-create Context Menu Items
     createMenus();
@@ -90,8 +99,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 });
 
-chrome.tabs.onActivated.addListener((activeInfo) => {
-    updateTabActivity(activeInfo.tabId);
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    // Update the previous tab's activity so it counts inactivity from NOW
+    // (Otherwise it counts from when it was last ACTIVATED, which could be long ago)
+    const data = await chrome.storage.local.get('lastActiveTabId');
+    const lastTabId = data.lastActiveTabId;
+
+    if (lastTabId && lastTabId !== activeInfo.tabId) {
+        await updateTabActivity(lastTabId);
+    }
+
+    // Update current tab and save it as the last active
+    await updateTabActivity(activeInfo.tabId);
+    await chrome.storage.local.set({ 'lastActiveTabId': activeInfo.tabId });
 });
 
 // Auto-Suspend Logic
@@ -119,12 +139,15 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // Initialize activity tracking for all existing tabs
 async function initializeExistingTabs() {
+    const data = await chrome.storage.local.get(TAB_ACTIVITY_KEY);
+    const activity = data[TAB_ACTIVITY_KEY] || {};
+
     const tabs = await chrome.tabs.query({});
     const now = Date.now();
-    const activity = {};
     for (const tab of tabs) {
         if (!isSystemPage(tab.url)) {
-            activity[tab.id] = now;
+            const baseTime = typeof tab.lastAccessed === 'number' ? tab.lastAccessed : now;
+            activity[tab.id] = baseTime;
         }
     }
     await chrome.storage.local.set({ [TAB_ACTIVITY_KEY]: activity });
@@ -175,13 +198,17 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
                 continue;
             }
 
-            const lastActive = activity[tab.id];
+            let lastActive = activity[tab.id];
 
-            // If we don't have activity data, initialize it to now (tab was created before extension loaded)
+            // If we don't have activity data, fall back to Chrome's lastAccessed for robustness
             if (!lastActive) {
-                await updateTabActivity(tab.id);
-                console.log(`TabTidy: Initialized activity for tab ${tab.id}`);
-                continue; // Skip this check, will catch it next time
+                if (typeof tab.lastAccessed === 'number') {
+                    lastActive = tab.lastAccessed;
+                } else {
+                    await updateTabActivity(tab.id);
+                    console.log(`TabTidy: Initialized activity for tab ${tab.id}`);
+                    continue; // Skip this check, will catch it next time
+                }
             }
 
             const inactiveTime = now - lastActive;
@@ -195,7 +222,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
         // Adaptive check interval: 15s for short delays (<=1 min), 1 min for longer delays
         const nextCheckDelay = delayMinutes <= 1 ? 0.25 : 1;
-        chrome.alarms.create('checkAutoSuspend', { delayInMinutes: nextCheckDelay });
+        chrome.alarms.create('checkAutoSuspend', { delayInMinutes: nextCheckDelay, periodInMinutes: 1 });
     }
 });
 
