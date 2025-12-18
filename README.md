@@ -7,8 +7,10 @@ A lightweight, open source tab manager that organizes tabs into groups and suspe
 - **One-Click Organization**: Instantly group all open tabs into color-coded sessions
 - **Auto-Suspend**: Automatically suspend inactive tabs after your chosen delay (1-60 minutes)
 - **Smart Whitelist**: Prevent specific sites from being auto-suspended
+- **Whitelist Import/Export**: Backup and restore your whitelist as JSON
 - **Instant Resume**: Suspended tabs reload automatically when you switch back to them
 - **Keyboard Shortcuts**: Quick access with Ctrl+Shift+Y (customizable)
+- **Badge Counter**: Shows the number of suspended tabs on the extension icon
 - **Lightweight**: Minimal memory footprint and clean interface
 
 ## Installation

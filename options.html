@@ -4,17 +4,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
     <title>TabTidy Options</title>
-    <link rel="stylesheet" href="popup.css">
     <style>
         body {
             width: 100%;
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             background-color: #f8f9fa;
             margin: 0;
+            padding: 40px 0;
+            box-sizing: border-box;
         }
 
         .container {
@@ -120,6 +122,98 @@
             border: 1px solid #dee2e6;
             border-radius: 4px;
         }
+
+        .whitelist-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        #whitelistStatus {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #495057;
+            min-height: 18px;
+        }
+
+        .add-custom-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .custom-group-item {
+            background: white;
+            padding: 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .custom-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .custom-group-name {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .custom-group-domains-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .domain-tag {
+            background: #e7f5ff;
+            color: #1864ab;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+        }
+
+        .domain-remove {
+            margin-left: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #1864ab;
+        }
+
+        .domain-remove:hover {
+            color: #d6336c;
+        }
+
+        .custom-group-add-domain {
+            display: flex;
+            gap: 6px;
+        }
+
+        .custom-group-add-domain input {
+            padding: 4px 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-size: 12px;
+            flex-grow: 1;
+        }
+
+        .custom-group-add-domain button {
+            padding: 4px 8px;
+            font-size: 12px;
+            margin-top: 0;
+            background: #adb5bd;
+        }
+
+        .custom-group-add-domain button:hover {
+            background: #868e96;
+        }
     </style>
 </head>
 
@@ -141,6 +235,42 @@
                     <option value="30">30 Minutes</option>
                     <option value="60">1 Hour</option>
                 </select>
+
+                <div style="margin-top: 15px; display: flex; align-items: center;">
+                    <input type="checkbox" id="groupOnSuspend" style="width: auto; margin-right: 10px;">
+                    <label for="groupOnSuspend" style="color: #495057; font-size: 14px;">Group tabs when
+                        auto-suspending</label>
+                </div>
+            </div>
+
+            <div class="setting-card">
+                <h3>Grouping Strategy</h3>
+                <p>Choose how tabs are organized when tidying.</p>
+                <select id="groupingStrategy">
+                    <option value="session">Generic Session</option>
+                    <option value="domain">Group by Domain</option>
+                </select>
+            </div>
+
+
+
+            <div class="setting-card">
+                <h3>Custom Groups</h3>
+                <p>Create specific groups for certain domains. These take priority over the strategy above.</p>
+                <div class="custom-groups-container">
+                    <div class="add-custom-group">
+                        <input type="text" id="newGroupName" placeholder="Group Name (e.g. Work)"
+                            style="width: 30%; margin-right: 10px; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px;">
+                        <input type="text" id="newGroupDomains"
+                            placeholder="Domains (e.g. github.com, stackoverflow.com)"
+                            style="flex-grow: 1; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px;">
+                        <button id="addCustomGroupBtn" class="button"
+                            style="margin-top: 0; margin-left: 10px;">Add</button>
+                    </div>
+                </div>
+                <div id="customGroupsList" style="margin-top: 15px;">
+                    <!-- Custom groups will appear here -->
+                </div>
             </div>
 
             <div class="setting-card">
@@ -152,6 +282,12 @@
                         <input type="text" id="newWhitelistItem" placeholder="example.com or full URL">
                         <button id="addWhitelistBtn" class="button" style="margin-top: 0;">Add</button>
                     </div>
+                    <div class="whitelist-actions">
+                        <button id="exportWhitelistBtn" class="button" style="margin-top: 0;">Export</button>
+                        <button id="importWhitelistBtn" class="button" style="margin-top: 0;">Import</button>
+                        <input type="file" id="importWhitelistFile" accept="application/json" style="display:none" />
+                    </div>
+                    <div id="whitelistStatus"></div>
                 </div>
             </div>
 
@@ -159,6 +295,15 @@
                 <h3>Keyboard Shortcuts</h3>
                 <p>Customize shortcuts in Chrome settings.</p>
                 <a href="#" id="shortcutsLink" class="button">Configure Shortcuts</a>
+            </div>
+
+            <div class="setting-card">
+                <h3>Debug Mode</h3>
+                <p>Enable verbose logging in the browser console for troubleshooting.</p>
+                <div style="display: flex; align-items: center;">
+                    <input type="checkbox" id="debugMode" style="width: auto; margin-right: 10px;">
+                    <label for="debugMode" style="color: #495057; font-size: 14px;">Enable debug logging</label>
+                </div>
             </div>
         </div>
     </div>

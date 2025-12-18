@@ -23,6 +23,8 @@ TabTidy stores the following data **locally on your device only**:
 
 1. **Auto-suspend delay preference** - Your chosen timer setting
 2. **Whitelist entries** - Domains or URLs you've whitelisted
+3. **Session counter** - A local counter used to name tab groups (e.g., "Session 3")
+4. **Suspended tab index** - A local index of suspended tabs (original URL/title/favicon) to support session/crash restore
 
 This data never leaves your device and can be cleared by removing the extension.
 
@@ -33,7 +35,6 @@ TabTidy requires the following Chrome permissions:
 - **`tabs`**: To read tab information (title, URL) for grouping and suspending
 - **`tabGroups`**: To create and manage tab groups
 - **`storage`**: To save your preferences locally on your device
-- **`scripting`**: To inject code for tab suspension
 - **`alarms`**: To schedule auto-suspend checks
 - **`contextMenus`**: To add right-click menu options for whitelisting
 - **`<all_urls>`**: To access tab content for suspension
