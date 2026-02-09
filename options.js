@@ -268,6 +268,135 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newGroupDomains = document.getElementById('newGroupDomains');
     const addCustomGroupBtn = document.getElementById('addCustomGroupBtn');
 
+    // --- Paused Tabs Logic ---
+    const pausedTabsList = document.getElementById('pausedTabsList');
+    const unpauseAllBtn = document.getElementById('unpauseAllBtn');
+
+    function formatTimeRemaining(ms) {
+        if (ms <= 0) return 'Expired';
+        const minutes = Math.floor(ms / 60000);
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        if (hours > 0) return `${hours}h ${mins}m remaining`;
+        return `${mins}m remaining`;
+    }
+
+    function formatDurationLabel(durationKey) {
+        const labels = {
+            '30min': '30 min',
+            '1hr': '1 hour',
+            '2hr': '2 hours',
+            '4hr': '4 hours',
+            'session': 'Until restart'
+        };
+        return labels[durationKey] || durationKey;
+    }
+
+    async function loadPausedTabs() {
+        if (!pausedTabsList) return;
+
+        const data = await chrome.storage.local.get('pausedTabs');
+        const paused = data.pausedTabs || {};
+        const entries = Object.entries(paused);
+
+        pausedTabsList.innerHTML = '';
+
+        if (entries.length === 0) {
+            const empty = document.createElement('div');
+            empty.textContent = 'No paused tabs.';
+            empty.style.color = '#868e96';
+            empty.style.fontStyle = 'italic';
+            pausedTabsList.appendChild(empty);
+            unpauseAllBtn.style.display = 'none';
+            return;
+        }
+
+        unpauseAllBtn.style.display = 'inline-block';
+        const now = Date.now();
+
+        for (const [tabId, entry] of entries) {
+            const div = document.createElement('div');
+            div.className = 'paused-tab-item';
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'paused-tab-info';
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'paused-tab-title';
+            titleSpan.textContent = entry.title || entry.url || `Tab ${tabId}`;
+
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'paused-tab-meta';
+            if (entry.pausedUntil === 0) {
+                metaSpan.textContent = 'Paused until browser restart';
+            } else {
+                const remaining = entry.pausedUntil - now;
+                metaSpan.textContent = remaining > 0
+                    ? formatTimeRemaining(remaining)
+                    : 'Expired (will resume on next check)';
+            }
+
+            infoDiv.appendChild(titleSpan);
+            infoDiv.appendChild(metaSpan);
+
+            const badge = document.createElement('span');
+            badge.className = 'paused-tab-badge';
+            badge.textContent = formatDurationLabel(entry.durationKey);
+
+            const removeBtn = document.createElement('span');
+            removeBtn.className = 'remove-btn';
+            removeBtn.dataset.tabId = tabId;
+            removeBtn.textContent = '✕';
+            removeBtn.title = 'Unpause this tab';
+
+            div.appendChild(infoDiv);
+            div.appendChild(badge);
+            div.appendChild(removeBtn);
+            pausedTabsList.appendChild(div);
+        }
+    }
+
+    loadPausedTabs();
+
+    // Refresh paused list every 30 seconds
+    setInterval(loadPausedTabs, 30000);
+
+    if (pausedTabsList) {
+        pausedTabsList.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('remove-btn') && e.target.dataset.tabId) {
+                const tabId = Number(e.target.dataset.tabId);
+                const data = await chrome.storage.local.get('pausedTabs');
+                const paused = data.pausedTabs || {};
+                delete paused[String(tabId)];
+                await chrome.storage.local.set({ pausedTabs: paused });
+
+                // Clear badge on that tab
+                try {
+                    await chrome.action.setBadgeText({ text: '', tabId });
+                } catch { /* tab may be gone */ }
+
+                loadPausedTabs();
+            }
+        });
+    }
+
+    if (unpauseAllBtn) {
+        unpauseAllBtn.addEventListener('click', async () => {
+            const data = await chrome.storage.local.get('pausedTabs');
+            const paused = data.pausedTabs || {};
+
+            // Clear all badges
+            for (const tabId of Object.keys(paused)) {
+                try {
+                    await chrome.action.setBadgeText({ text: '', tabId: Number(tabId) });
+                } catch { /* tab may be gone */ }
+            }
+
+            await chrome.storage.local.set({ pausedTabs: {} });
+            loadPausedTabs();
+        });
+    }
+
     async function loadCustomGroups() {
         if (!customGroupsList) return;
 

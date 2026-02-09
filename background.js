@@ -4,21 +4,39 @@
 const TAB_ACTIVITY_KEY = 'tabActivity';
 const SESSION_COUNTER_KEY = 'sessionCounter';
 const SUSPENDED_TABS_KEY = 'suspendedTabs';
+const PAUSED_TABS_KEY = 'pausedTabs';
 const DEBUG_MODE_KEY = 'debugMode';
 const COLORS = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 
-let badgeUpdateScheduled = false;
-let updateIndexDebounceTimer = null;
+// Pause durations in minutes
+const PAUSE_DURATIONS = {
+    '30min': 30,
+    '1hr': 60,
+    '2hr': 120,
+    '4hr': 240,
+    'session': 0 // 0 = until browser restart
+};
+
 let debugMode = false;
+
+// Per-tab debounce timers for suspended index updates
+const updateIndexDebounceTimers = {};
 
 // Local cache for tab activity to prevent storage race conditions
 let localTabActivity = {};
 let activitySaveTimer = null;
 
+// Local cache for paused tabs
+let localPausedTabs = {};
+
+// In-memory cache for last active tab (avoids storage read on every tab switch)
+let lastActiveTabIdCache = null;
+
 // Load initial state
-chrome.storage.local.get([DEBUG_MODE_KEY, TAB_ACTIVITY_KEY]).then(data => {
+chrome.storage.local.get([DEBUG_MODE_KEY, TAB_ACTIVITY_KEY, PAUSED_TABS_KEY]).then(data => {
     debugMode = !!data[DEBUG_MODE_KEY];
     localTabActivity = data[TAB_ACTIVITY_KEY] || {};
+    localPausedTabs = data[PAUSED_TABS_KEY] || {};
 });
 
 // Conditional logging helper
@@ -129,23 +147,9 @@ function getPrettyGroupName(rootDomain) {
     return part.charAt(0).toUpperCase() + part.slice(1);
 }
 
-async function updateBadge() {
-    try {
-        // Removed suspended tab count indicator as requested
-        await chrome.action.setBadgeText({ text: '' });
-    } catch (e) {
-        console.warn('TabTidy: Failed to update badge:', e);
-    }
-}
-
-function scheduleBadgeUpdate() {
-    if (badgeUpdateScheduled) return;
-    badgeUpdateScheduled = true;
-    setTimeout(() => {
-        badgeUpdateScheduled = false;
-        updateBadge();
-    }, 250);
-}
+// Badge is intentionally disabled — no-op functions kept for call-site compatibility
+function scheduleBadgeUpdate() {}
+async function updateBadge() {}
 
 async function getNextSessionNumber() {
     const data = await chrome.storage.local.get(SESSION_COUNTER_KEY);
@@ -177,6 +181,105 @@ async function rebuildSuspendedIndex() {
     await chrome.storage.local.set({ [SUSPENDED_TABS_KEY]: nextIndex });
 }
 
+// --- Pause Suspension Helpers ---
+
+async function pauseTab(tabId, durationKey) {
+    const duration = PAUSE_DURATIONS[durationKey];
+    const now = Date.now();
+    let pausedUntil = 0; // 0 = session (cleared on restart)
+    if (duration > 0) {
+        pausedUntil = now + duration * 60 * 1000;
+    }
+
+    let tab;
+    try {
+        tab = await chrome.tabs.get(tabId);
+    } catch {
+        return;
+    }
+
+    localPausedTabs[String(tabId)] = {
+        pausedUntil,
+        url: tab.url || '',
+        title: tab.title || '',
+        pausedAt: now,
+        durationKey
+    };
+    await chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+
+    // Set badge on this specific tab to indicate paused
+    try {
+        await chrome.action.setBadgeText({ text: '⏸', tabId });
+        await chrome.action.setBadgeBackgroundColor({ color: '#ffa94d', tabId });
+    } catch (e) {
+        debugLog('Failed to set pause badge:', e);
+    }
+
+    debugLog(`Paused tab ${tabId} for ${durationKey}`);
+}
+
+async function unpauseTab(tabId) {
+    const key = String(tabId);
+    if (localPausedTabs[key]) {
+        delete localPausedTabs[key];
+        await chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+
+        // Clear the tab-specific badge
+        try {
+            await chrome.action.setBadgeText({ text: '', tabId });
+        } catch (e) {
+            debugLog('Failed to clear pause badge:', e);
+        }
+
+        debugLog(`Unpaused tab ${tabId}`);
+    }
+}
+
+function isTabPaused(tabId) {
+    const entry = localPausedTabs[String(tabId)];
+    if (!entry) return false;
+
+    // Session pause (pausedUntil === 0) is always active until cleared
+    if (entry.pausedUntil === 0) return true;
+
+    // Timed pause: check if still valid
+    if (Date.now() < entry.pausedUntil) return true;
+
+    // Expired — clean up
+    delete localPausedTabs[String(tabId)];
+    chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+    return false;
+}
+
+async function cleanExpiredPauses() {
+    const now = Date.now();
+    let changed = false;
+    for (const [tabId, entry] of Object.entries(localPausedTabs)) {
+        if (entry.pausedUntil > 0 && now >= entry.pausedUntil) {
+            delete localPausedTabs[tabId];
+            changed = true;
+            // Clear badge for expired pause
+            try {
+                await chrome.action.setBadgeText({ text: '', tabId: Number(tabId) });
+            } catch { /* tab may be gone */ }
+        }
+    }
+    if (changed) {
+        await chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+    }
+}
+
+async function restorePauseBadges() {
+    for (const [tabId, entry] of Object.entries(localPausedTabs)) {
+        if (entry.pausedUntil === 0 || Date.now() < entry.pausedUntil) {
+            try {
+                await chrome.action.setBadgeText({ text: '⏸', tabId: Number(tabId) });
+                await chrome.action.setBadgeBackgroundColor({ color: '#ffa94d', tabId: Number(tabId) });
+            } catch { /* tab may be gone */ }
+        }
+    }
+}
+
 // Shared function to create menus
 function createMenus() {
     chrome.contextMenus.removeAll(() => {
@@ -188,6 +291,47 @@ function createMenus() {
         chrome.contextMenus.create({
             id: "whitelist-url",
             title: "TabTidy: Whitelist this URL",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({ id: "sep1", type: "separator", contexts: ["all"] });
+        chrome.contextMenus.create({
+            id: "pause-parent",
+            title: "TabTidy: Pause Suspension",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "pause-30min",
+            parentId: "pause-parent",
+            title: "Pause for 30 minutes",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "pause-1hr",
+            parentId: "pause-parent",
+            title: "Pause for 1 hour",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "pause-2hr",
+            parentId: "pause-parent",
+            title: "Pause for 2 hours",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "pause-4hr",
+            parentId: "pause-parent",
+            title: "Pause for 4 hours",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "pause-session",
+            parentId: "pause-parent",
+            title: "Pause until browser restart",
+            contexts: ["all"]
+        });
+        chrome.contextMenus.create({
+            id: "unpause-tab",
+            title: "TabTidy: Resume Suspension",
             contexts: ["all"]
         });
     });
@@ -217,6 +361,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 
     // Crash/session restore helpers
     await rebuildSuspendedIndex();
+    await restorePauseBadges();
     await updateBadge();
 });
 
@@ -233,21 +378,29 @@ chrome.runtime.onStartup.addListener(async () => {
     // Initialize activity for all existing tabs
     await initializeExistingTabs();
 
+    // Clear session-only pauses on browser restart
+    const pauseData = await chrome.storage.local.get(PAUSED_TABS_KEY);
+    localPausedTabs = pauseData[PAUSED_TABS_KEY] || {};
+    let changed = false;
+    for (const [tabId, entry] of Object.entries(localPausedTabs)) {
+        if (entry.pausedUntil === 0) {
+            delete localPausedTabs[tabId];
+            changed = true;
+        }
+    }
+    if (changed) {
+        await chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+    }
+
     // Crash/session restore helpers
     await rebuildSuspendedIndex();
+    await restorePauseBadges();
     await updateBadge();
 });
 
 // Listen for extension icon click
 chrome.action.onClicked.addListener(async (tab) => {
     await performTidy();
-});
-
-// Listen for keyboard commands
-chrome.commands.onCommand.addListener(async (command) => {
-    if (command === '_execute_action') {
-        await performTidy();
-    }
 });
 
 // Handle Context Menu Clicks
@@ -275,22 +428,37 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             debugLog(`Added '${itemToAdd}' to whitelist`);
         }
     }
+
+    // Pause suspension for this tab
+    const pauseMap = {
+        'pause-30min': '30min',
+        'pause-1hr': '1hr',
+        'pause-2hr': '2hr',
+        'pause-4hr': '4hr',
+        'pause-session': 'session'
+    };
+    if (pauseMap[info.menuItemId] && tab?.id) {
+        await pauseTab(tab.id, pauseMap[info.menuItemId]);
+    }
+
+    // Unpause / resume suspension
+    if (info.menuItemId === 'unpause-tab' && tab?.id) {
+        await unpauseTab(tab.id);
+    }
 });
 
-// Listen for tab updates to analyze content (Future proofing / "AI" prep)
+// Listen for tab updates
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url) {
-        analyzeTab(tab);
-    }
     // Update activity timestamp
     if (changeInfo.status === 'complete' || changeInfo.url) {
         updateTabActivity(tabId);
     }
 
-    // Maintain suspended index + badge (debounced to reduce storage writes)
+    // Maintain suspended index (per-tab debounce to avoid losing updates)
     if (changeInfo.url || changeInfo.status === 'complete') {
-        clearTimeout(updateIndexDebounceTimer);
-        updateIndexDebounceTimer = setTimeout(async () => {
+        clearTimeout(updateIndexDebounceTimers[tabId]);
+        updateIndexDebounceTimers[tabId] = setTimeout(async () => {
+            delete updateIndexDebounceTimers[tabId];
             try {
                 const data = await chrome.storage.local.get(SUSPENDED_TABS_KEY);
                 const index = data[SUSPENDED_TABS_KEY] || {};
@@ -315,28 +483,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                         await chrome.storage.local.set({ [SUSPENDED_TABS_KEY]: index });
                     }
                 }
-
-                scheduleBadgeUpdate();
             } catch (e) {
                 console.warn('TabTidy: Failed to update suspended index:', e);
             }
-        }, 100); // 100ms debounce
+        }, 100); // 100ms debounce per tab
     }
 });
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     // Update the previous tab's activity so it counts inactivity from NOW
-    // (Otherwise it counts from when it was last ACTIVATED, which could be long ago)
-    const data = await chrome.storage.local.get('lastActiveTabId');
-    const lastTabId = data.lastActiveTabId;
-
-    if (lastTabId && lastTabId !== activeInfo.tabId) {
-        await updateTabActivity(lastTabId);
+    if (lastActiveTabIdCache && lastActiveTabIdCache !== activeInfo.tabId) {
+        updateTabActivity(lastActiveTabIdCache);
     }
 
-    // Update current tab and save it as the last active
-    await updateTabActivity(activeInfo.tabId);
-    await chrome.storage.local.set({ 'lastActiveTabId': activeInfo.tabId });
+    // Update current tab and save it as the last active (in-memory only)
+    updateTabActivity(activeInfo.tabId);
+    lastActiveTabIdCache = activeInfo.tabId;
 });
 
 // Auto-Suspend Logic
@@ -358,10 +520,18 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 // Track removed tabs (cleanup)
 chrome.tabs.onRemoved.addListener(async (tabId) => {
     delete localTabActivity[tabId];
+    clearTimeout(updateIndexDebounceTimers[tabId]);
+    delete updateIndexDebounceTimers[tabId];
     clearTimeout(activitySaveTimer);
     activitySaveTimer = setTimeout(() => {
         chrome.storage.local.set({ [TAB_ACTIVITY_KEY]: localTabActivity });
     }, 1000);
+
+    // Clean up paused state for removed tab
+    if (localPausedTabs[String(tabId)]) {
+        delete localPausedTabs[String(tabId)];
+        await chrome.storage.local.set({ [PAUSED_TABS_KEY]: localPausedTabs });
+    }
 
     const suspendedData = await chrome.storage.local.get(SUSPENDED_TABS_KEY);
     const suspendedIndex = suspendedData[SUSPENDED_TABS_KEY] || {};
@@ -394,7 +564,10 @@ async function initializeExistingTabs() {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     debugLog('Alarm fired:', alarm.name);
     if (alarm.name === 'checkAutoSuspend') {
-        const settings = await chrome.storage.local.get(['autoSuspendDelay', 'whitelist', TAB_ACTIVITY_KEY, 'groupOnSuspend']);
+        // Clean up expired pauses
+        await cleanExpiredPauses();
+
+        const settings = await chrome.storage.local.get(['autoSuspendDelay', 'whitelist', 'groupOnSuspend']);
         const delayMinutes = Number(settings.autoSuspendDelay) || 0;
         const groupOnSuspend = !!settings.groupOnSuspend;
 
@@ -402,8 +575,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
         if (!delayMinutes || delayMinutes <= 0) {
             debugLog('Auto-suspend disabled');
-            // Use 1 minute interval when disabled to reduce overhead
-            chrome.alarms.create('checkAutoSuspend', { delayInMinutes: 1 });
             return;
         }
 
@@ -437,6 +608,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
             // Skip if already suspended or pinned or system page
             if (isSuspendedTabUrl(tab.url) || tab.pinned || isSystemPage(tab.url || '')) {
+                continue;
+            }
+
+            // Skip if tab is paused
+            if (isTabPaused(tab.id)) {
+                debugLog(`Tab ${tab.id} is paused, skipping`);
                 continue;
             }
 
@@ -483,9 +660,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             }
         }
 
-        // Adaptive check interval: 15s for short delays (<=1 min), 1 minute for longer delays
-        const nextCheckDelay = delayMinutes <= 1 ? 0.25 : 1;
-        chrome.alarms.create('checkAutoSuspend', { delayInMinutes: nextCheckDelay, periodInMinutes: 1 });
     }
 });
 
@@ -539,11 +713,6 @@ async function suspendTab(tab) {
     } catch (e) {
         console.warn(`Failed to auto-suspend tab ${tab.id}:`, e);
     }
-}
-
-async function analyzeTab(tab) {
-    // In a real "AI" version, we might send the title/url to an LLM here.
-    // For now, we just ensure we have the metadata ready or cache it.
 }
 
 async function organizeTabs(inputTabs) {
@@ -677,6 +846,9 @@ async function performTidy() {
 
     for (const tab of validTabs) {
         if (tab.active || tab.audible || tab.pinned || isSuspendedTabUrl(tab.url)) continue;
+
+        // Skip paused tabs
+        if (isTabPaused(tab.id)) continue;
 
         const lastActive = localTabActivity[tab.id] || 0;
         const inactiveTime = now - lastActive;

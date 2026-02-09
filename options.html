@@ -214,6 +214,51 @@
         .custom-group-add-domain button:hover {
             background: #868e96;
         }
+
+        .paused-tab-item {
+            background: white;
+            padding: 10px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .paused-tab-info {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex: 1;
+            margin-right: 10px;
+        }
+
+        .paused-tab-title {
+            font-weight: 500;
+            color: #495057;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .paused-tab-meta {
+            font-size: 12px;
+            color: #868e96;
+            margin-top: 2px;
+        }
+
+        .paused-tab-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #fff3bf;
+            color: #e67700;
+            white-space: nowrap;
+            margin-right: 8px;
+        }
     </style>
 </head>
 
@@ -271,6 +316,13 @@
                 <div id="customGroupsList" style="margin-top: 15px;">
                     <!-- Custom groups will appear here -->
                 </div>
+            </div>
+
+            <div class="setting-card">
+                <h3>Paused Tabs</h3>
+                <p>Tabs temporarily exempt from auto-suspension. Right-click any tab → "TabTidy: Pause Suspension" to add.</p>
+                <div id="pausedTabsList" style="margin-top: 10px;"></div>
+                <button id="unpauseAllBtn" class="button" style="margin-top: 10px; background: #868e96;">Unpause All</button>
             </div>
 
             <div class="setting-card">
