@@ -41,6 +41,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         chrome.storage.local.set({ groupingStrategy: strategySelect.value });
     });
 
+    // Load Suspension Method setting
+    const suspensionMethodSelect = document.getElementById('suspensionMethod');
+    const suspensionMethodData = await chrome.storage.local.get('suspensionMethod');
+    if (suspensionMethodData.suspensionMethod) {
+        suspensionMethodSelect.value = suspensionMethodData.suspensionMethod;
+    } else {
+        // Default to 'custom'
+        suspensionMethodSelect.value = 'custom';
+    }
+
+    // Save Suspension Method setting on change
+    suspensionMethodSelect.addEventListener('change', () => {
+        chrome.storage.local.set({ suspensionMethod: suspensionMethodSelect.value });
+    });
+
     document.getElementById('shortcutsLink').addEventListener('click', (e) => {
         e.preventDefault();
         chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });

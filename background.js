@@ -33,7 +33,7 @@ let localPausedTabs = {};
 let lastActiveTabIdCache = null;
 
 // Load initial state
-chrome.storage.local.get([DEBUG_MODE_KEY, TAB_ACTIVITY_KEY, PAUSED_TABS_KEY]).then(data => {
+let initPromise = chrome.storage.local.get([DEBUG_MODE_KEY, TAB_ACTIVITY_KEY, PAUSED_TABS_KEY]).then(data => {
     debugMode = !!data[DEBUG_MODE_KEY];
     localTabActivity = data[TAB_ACTIVITY_KEY] || {};
     localPausedTabs = data[PAUSED_TABS_KEY] || {};
@@ -283,57 +283,36 @@ async function restorePauseBadges() {
 // Shared function to create menus
 function createMenus() {
     chrome.contextMenus.removeAll(() => {
-        chrome.contextMenus.create({
-            id: "whitelist-domain",
-            title: "TabTidy: Whitelist this Domain",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "whitelist-url",
-            title: "TabTidy: Whitelist this URL",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({ id: "sep1", type: "separator", contexts: ["all"] });
-        chrome.contextMenus.create({
-            id: "pause-parent",
-            title: "TabTidy: Pause Suspension",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "pause-30min",
-            parentId: "pause-parent",
-            title: "Pause for 30 minutes",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "pause-1hr",
-            parentId: "pause-parent",
-            title: "Pause for 1 hour",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "pause-2hr",
-            parentId: "pause-parent",
-            title: "Pause for 2 hours",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "pause-4hr",
-            parentId: "pause-parent",
-            title: "Pause for 4 hours",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "pause-session",
-            parentId: "pause-parent",
-            title: "Pause until browser restart",
-            contexts: ["all"]
-        });
-        chrome.contextMenus.create({
-            id: "unpause-tab",
-            title: "TabTidy: Resume Suspension",
-            contexts: ["all"]
-        });
+        if (chrome.runtime.lastError) {
+            debugLog('Error removing context menus:', chrome.runtime.lastError);
+        }
+        
+        const menus = [
+            { id: "whitelist-domain", title: "TabTidy: Whitelist this Domain", contexts: ["all"] },
+            { id: "whitelist-url", title: "TabTidy: Whitelist this URL", contexts: ["all"] },
+            { id: "sep1", type: "separator", contexts: ["all"] },
+            { id: "pause-parent", title: "TabTidy: Pause Suspension", contexts: ["all"] },
+            { id: "pause-30min", parentId: "pause-parent", title: "Pause for 30 minutes", contexts: ["all"] },
+            { id: "pause-1hr", parentId: "pause-parent", title: "Pause for 1 hour", contexts: ["all"] },
+            { id: "pause-2hr", parentId: "pause-parent", title: "Pause for 2 hours", contexts: ["all"] },
+            { id: "pause-4hr", parentId: "pause-parent", title: "Pause for 4 hours", contexts: ["all"] },
+            { id: "pause-session", parentId: "pause-parent", title: "Pause until browser restart", contexts: ["all"] },
+            { id: "unpause-tab", title: "TabTidy: Resume Suspension", contexts: ["all"] },
+            { id: "sep2", type: "separator", contexts: ["all"] },
+            { id: "suspend-now", title: "TabTidy: Suspend this Tab Now", contexts: ["all"] },
+            { id: "suspend-other", title: "TabTidy: Suspend Other Tabs", contexts: ["all"] }
+        ];
+
+        for (const menu of menus) {
+            chrome.contextMenus.create(menu, () => {
+                if (chrome.runtime.lastError) {
+                    // Ignore duplicate ID errors, log others
+                    if (!chrome.runtime.lastError.message.includes('duplicate id')) {
+                        debugLog('Error creating context menu:', chrome.runtime.lastError);
+                    }
+                }
+            });
+        }
     });
 }
 
@@ -400,11 +379,12 @@ chrome.runtime.onStartup.addListener(async () => {
 
 // Listen for extension icon click
 chrome.action.onClicked.addListener(async (tab) => {
-    await performTidy();
+    // Action is now handled by popup.html
 });
 
 // Handle Context Menu Clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    await initPromise;
     if (info.menuItemId === "whitelist-domain" || info.menuItemId === "whitelist-url") {
         let itemToAdd = "";
         try {
@@ -445,10 +425,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === 'unpause-tab' && tab?.id) {
         await unpauseTab(tab.id);
     }
+
+    // Suspend Now
+    if (info.menuItemId === 'suspend-now' && tab?.id) {
+        await suspendTab(tab);
+    }
+
+    // Suspend Other Tabs
+    if (info.menuItemId === 'suspend-other' && tab?.id) {
+        const allTabs = await chrome.tabs.query({ windowId: tab.windowId });
+        for (const t of allTabs) {
+            if (t.id !== tab.id && !t.active && !t.pinned && !t.audible && !isSuspendedTabUrl(t.url)) {
+                await suspendTab(t);
+            }
+        }
+    }
 });
 
 // Listen for tab updates
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    await initPromise;
     // Update activity timestamp
     if (changeInfo.status === 'complete' || changeInfo.url) {
         updateTabActivity(tabId);
@@ -491,6 +487,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    await initPromise;
     // Update the previous tab's activity so it counts inactivity from NOW
     if (lastActiveTabIdCache && lastActiveTabIdCache !== activeInfo.tabId) {
         updateTabActivity(lastActiveTabIdCache);
@@ -514,11 +511,13 @@ async function updateTabActivity(tabId) {
 
 // Track new tabs
 chrome.tabs.onCreated.addListener(async (tab) => {
+    await initPromise;
     await updateTabActivity(tab.id);
 });
 
 // Track removed tabs (cleanup)
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+    await initPromise;
     delete localTabActivity[tabId];
     clearTimeout(updateIndexDebounceTimers[tabId]);
     delete updateIndexDebounceTimers[tabId];
@@ -562,12 +561,20 @@ async function initializeExistingTabs() {
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+    await initPromise;
     debugLog('Alarm fired:', alarm.name);
     if (alarm.name === 'checkAutoSuspend') {
         // Clean up expired pauses
         await cleanExpiredPauses();
 
-        const settings = await chrome.storage.local.get(['autoSuspendDelay', 'whitelist', 'groupOnSuspend']);
+        const settings = await chrome.storage.local.get(['autoSuspendDelay', 'whitelist', 'groupOnSuspend', 'globalPauseUntil']);
+        
+        // Check global pause
+        if (settings.globalPauseUntil && settings.globalPauseUntil > Date.now()) {
+            debugLog('Global auto-suspend is paused');
+            return;
+        }
+
         const delayMinutes = Number(settings.autoSuspendDelay) || 0;
         const groupOnSuspend = !!settings.groupOnSuspend;
 
@@ -615,6 +622,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             if (isTabPaused(tab.id)) {
                 debugLog(`Tab ${tab.id} is paused, skipping`);
                 continue;
+            }
+
+            // Check for unsaved forms
+            try {
+                const response = await chrome.tabs.sendMessage(tab.id, { action: 'checkUnsavedForms' });
+                if (response && response.hasUnsavedForms) {
+                    debugLog(`Tab ${tab.id} has unsaved forms, skipping suspension`);
+                    continue;
+                }
+            } catch (e) {
+                // Content script might not be injected or page doesn't support it
+                debugLog(`Could not check forms for tab ${tab.id}:`, e.message);
             }
 
             let lastActive = activity[tab.id];
@@ -665,6 +684,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 async function suspendTab(tab) {
     try {
+        const settings = await chrome.storage.local.get('suspensionMethod');
+        const method = settings.suspensionMethod || 'custom';
+
+        if (method === 'native') {
+            // Use Chrome's native discard
+            await chrome.tabs.discard(tab.id);
+            return;
+        }
+
         // Persist original info (crash/session restore index)
         const data = await chrome.storage.local.get(SUSPENDED_TABS_KEY);
         const index = data[SUSPENDED_TABS_KEY] || {};
@@ -682,31 +710,6 @@ async function suspendTab(tab) {
             `&favicon=${encodeURIComponent(tab.favIconUrl || '')}`;
 
         await chrome.tabs.update(tab.id, { url: suspendedUrl });
-
-        // Wait for the tab to load the suspended page, then discard it
-        const listener = function (tid, changeInfo) {
-            if (tid === tab.id && changeInfo.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(listener);
-                clearTimeout(listenerTimeout);
-
-                setTimeout(async () => {
-                    try {
-                        const currentTab = await chrome.tabs.get(tab.id);
-                        if (!currentTab.active) {
-                            await chrome.tabs.discard(tab.id);
-                        }
-                    } catch (err) {
-                        console.warn('Discard failed', err);
-                    }
-                }, 1000);
-            }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-
-        // Cleanup listener after 30 seconds to prevent memory leaks
-        const listenerTimeout = setTimeout(() => {
-            chrome.tabs.onUpdated.removeListener(listener);
-        }, 30000);
 
         scheduleBadgeUpdate();
 
@@ -871,6 +874,13 @@ async function performTidy() {
 
     scheduleBadgeUpdate();
 }
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'performTidy') {
+        performTidy();
+    }
+});
 
 function isSystemPage(url) {
     if (typeof url !== 'string') return true;
